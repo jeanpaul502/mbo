@@ -1,0 +1,27 @@
+{
+  "name": "it-framework",
+  "version": "0.1.0",
+  "private": true,
+  "description": "IT Framework monorepo - compiler, runtime, CLI and full-stack packages for the .it ecosystem.",
+  "license": "MIT",
+  "bin": {
+    "it": "./scripts/it.mjs"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "dev": "node scripts/it.mjs dev",
+    "test": "npm run test --workspaces --if-present",
+    "doctor": "node scripts/it.mjs doctor"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0"
+  }
+}

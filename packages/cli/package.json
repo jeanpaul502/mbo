@@ -1,0 +1,30 @@
+{
+  "name": "@itfw/cli",
+  "version": "0.1.0",
+  "description": "IT Framework command line interface",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test",
+    "dev": "tsx src/index.ts",
+    "doctor": "tsx src/index.ts doctor"
+  },
+  "dependencies": {
+    "@itfw/compiler": "0.1.0",
+    "@itfw/package-manager": "0.1.0",
+    "@itfw/runtime": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.0",
+    "tsx": "^4.20.0"
+  },
+  "bin": {
+    "it": "./dist/index.js"
+  }
+}

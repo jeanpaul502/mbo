@@ -1,0 +1,5 @@
+name "my-app";
+version "0.1.0";
+dependency "@itfw/runtime" "0.1.0";
+dependency "@itfw/frontend" "0.1.0";
+dependency "@itfw/backend" "0.1.0";
