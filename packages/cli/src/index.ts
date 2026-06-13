@@ -81,6 +81,32 @@ Commands:
 `);
 }
 
+function parseItConfig(content: string): Record<string, string> {
+  const config: Record<string, string> = {};
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) {
+      continue;
+    }
+    const match = line.match(/^([A-Za-z0-9_-]+)\s*=\s*"([^"]*)"$/);
+    if (match?.[1] && match[2] !== undefined) {
+      config[match[1]] = match[2];
+    }
+  }
+  return config;
+}
+
+async function resolveProjectEntry(projectRoot: string): Promise<string> {
+  const configPath = resolve(projectRoot, "it.config");
+  if (existsSync(configPath)) {
+    const config = parseItConfig(await readFile(configPath, "utf8"));
+    if (config.entry) {
+      return config.entry;
+    }
+  }
+  return "examples/basic-app/app/pages/Home.it";
+}
+
 async function createApp(name: string): Promise<void> {
   const target = resolve(process.cwd(), name);
   const template = fileURLToPath(templateDirectory);
@@ -90,7 +116,12 @@ async function createApp(name: string): Promise<void> {
   }
 
   if (existsSync(target)) {
-    throw new Error(`Target directory already exists: ${target}`);
+    const existingEntries = await readdir(target);
+    if (existingEntries.length > 0) {
+      throw new Error(`Target directory already exists and is not empty: ${target}`);
+    }
+  } else {
+    mkdirSync(target, { recursive: true });
   }
 
   cpSync(template, target, { recursive: true });
@@ -98,8 +129,9 @@ async function createApp(name: string): Promise<void> {
   console.log(`Application created in ${target}`);
 }
 
-async function dev(entryFile = "examples/basic-app/app/pages/Home.it"): Promise<void> {
-  const result = await compileItFile(resolve(process.cwd(), entryFile));
+async function dev(entryFile?: string): Promise<void> {
+  const resolvedEntryFile = entryFile ?? (await resolveProjectEntry(process.cwd()));
+  const result = await compileItFile(resolve(process.cwd(), resolvedEntryFile));
   if (!result.success) {
     console.error("Compilation failed:");
     for (const diagnostic of result.diagnostics) {
@@ -116,8 +148,9 @@ async function dev(entryFile = "examples/basic-app/app/pages/Home.it"): Promise<
   console.log(result.code);
 }
 
-async function build(entryFile = "examples/basic-app/app/pages/Home.it", outDir = ".it-build"): Promise<void> {
-  const result = await compileItFile(resolve(process.cwd(), entryFile));
+async function build(entryFile?: string, outDir = ".it-build"): Promise<void> {
+  const resolvedEntryFile = entryFile ?? (await resolveProjectEntry(process.cwd()));
+  const result = await compileItFile(resolve(process.cwd(), resolvedEntryFile));
   if (!result.success) {
     console.error("Build failed:");
     for (const diagnostic of result.diagnostics) {
@@ -164,10 +197,14 @@ async function updateDependency(name?: string, version?: string): Promise<void> 
 async function doctor(): Promise<void> {
   const projectRoot = process.cwd();
   const manifestPath = resolve(projectRoot, "package.it");
+  const configPath = resolve(projectRoot, "it.config");
+  const appPagesPath = resolve(projectRoot, "app", "pages");
   const checks = [
     ["package.it", existsSync(manifestPath)],
+    ["it.config", existsSync(configPath)],
+    ["app/pages/", existsSync(appPagesPath)],
     ["vendor/", existsSync(resolve(projectRoot, "vendor"))],
-    ["templates/", existsSync(resolve(projectRoot, "templates"))]
+    ["plugins/", existsSync(resolve(projectRoot, "plugins"))]
   ];
 
   for (const [label, ok] of checks) {
