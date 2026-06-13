@@ -1,5 +1,0 @@
-page Home {
-  route: "/";
-  title: "My IT App";
-  layout: "Main";
-}

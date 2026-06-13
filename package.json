@@ -1,29 +1,20 @@
 {
-  "name": "it-framework",
+  "name": "cm-framework",
   "version": "0.1.0",
   "private": true,
-  "description": "IT Framework monorepo - compiler, runtime, CLI and full-stack packages for the .it ecosystem.",
-  "license": "MIT",
+  "type": "module",
+  "description": "Framework full stack CM base sur JavaScript, TypeScript, Python, HTML et CSS.",
   "bin": {
-    "it": "./scripts/it.mjs"
+    "cm": "./bin/cm.mjs"
   },
-  "workspaces": [
-    "packages/*"
-  ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
-    "dev": "node scripts/it.mjs dev",
-    "typecheck": "tsc -b",
-    "test": "npm run test --workspaces --if-present",
-    "doctor": "node scripts/it.mjs doctor",
-    "smoke": "node scripts/it.mjs build examples/basic-app/app/pages/Home.it .it-build"
+    "dev": "node ./bin/cm.mjs serve",
+    "build": "node ./bin/cm.mjs build",
+    "doctor": "node ./bin/cm.mjs doctor",
+    "install:cm": "node ./bin/cm.mjs install",
+    "test": "node --test tests"
   },
   "engines": {
     "node": ">=20.0.0"
-  },
-  "devDependencies": {
-    "@types/node": "^24.0.0",
-    "tsx": "^4.20.0",
-    "typescript": "^5.8.0"
   }
 }

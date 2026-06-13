@@ -1,5 +1,0 @@
-page Home {
-  route: "/";
-  title: "Welcome to IT Framework";
-  layout: "Main";
-}

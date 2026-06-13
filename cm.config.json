@@ -1,0 +1,6 @@
+{
+  "appName": "cm-app",
+  "entry": "app/pages/Home.cm",
+  "port": 3100,
+  "buildDir": "storage/build"
+}

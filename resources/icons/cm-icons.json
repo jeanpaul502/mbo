@@ -1,0 +1,8 @@
+{
+  "framework": {
+    "home": "cm-home",
+    "user": "cm-user",
+    "settings": "cm-settings",
+    "plugin": "cm-plugin"
+  }
+}

@@ -1,0 +1,5 @@
+layout Main {
+  brand: "CM Framework";
+  shell: "default";
+  theme: "cm-default";
+}

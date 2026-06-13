@@ -1,9 +1,6 @@
 node_modules/
-dist/
-coverage/
-.tmp/
-.it-build/
-*.log
-*.tsbuildinfo
-vendor/
-.env
+storage/build/
+logs/*.log
+vendor/installed.json
+vendor/**/package.json
+.env.local

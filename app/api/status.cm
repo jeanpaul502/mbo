@@ -1,0 +1,7 @@
+page Status {
+  route: "/api/status";
+  title: "Status";
+  headline: "API status";
+  description: "Endpoint de statut logique pour le framework.";
+  layout: "Main";
+}

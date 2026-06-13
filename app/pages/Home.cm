@@ -1,0 +1,7 @@
+page Home {
+  route: "/";
+  title: "cm-app";
+  headline: "Bienvenue dans CM Framework";
+  description: "Un nouveau framework full stack organise pour construire des applications modernes.";
+  layout: "Main";
+}
