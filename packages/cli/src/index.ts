@@ -2,6 +2,7 @@
 import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { compileItFile } from "@itfw/compiler";
 import {
   addDependency,
@@ -10,6 +11,8 @@ import {
   syncVendorDirectory
 } from "@itfw/package-manager";
 import { createApplication, registerModule, renderApplicationSummary } from "@itfw/runtime";
+
+const templateDirectory = new URL("../../../templates/app/", import.meta.url);
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -23,7 +26,7 @@ async function main(): Promise<void> {
   }
 
   if (command === "create" && subcommand === "app") {
-    const appName = rest[0];
+    const appName = rest[1];
     if (!appName) {
       throw new Error("Usage: it create app <name>");
     }
@@ -80,10 +83,10 @@ Commands:
 
 async function createApp(name: string): Promise<void> {
   const target = resolve(process.cwd(), name);
-  const template = resolve(process.cwd(), "templates", "app");
+  const template = fileURLToPath(templateDirectory);
 
   if (!existsSync(template)) {
-    throw new Error("Template directory not found. Run the command from the repository root.");
+    throw new Error("Template directory not found. Rebuild or reinstall IT Framework.");
   }
 
   if (existsSync(target)) {

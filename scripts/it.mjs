@@ -2,14 +2,33 @@
 import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { compileItFile } from "../packages/compiler/dist/index.js";
-import {
-  addDependency,
-  readPackageIt,
-  removeDependency,
-  syncVendorDirectory
-} from "../packages/package-manager/dist/index.js";
-import { createApplication, registerModule, renderApplicationSummary } from "../packages/runtime/dist/index.js";
+import { fileURLToPath } from "node:url";
+
+const templateDirectory = new URL("../templates/app/", import.meta.url);
+let compilerModulePromise;
+let packageManagerModulePromise;
+let runtimeModulePromise;
+
+async function loadCompiler() {
+  compilerModulePromise ??= import("../packages/compiler/dist/index.js").catch(() => {
+    throw new Error("Compiler package is not built. Run `npm install` then `npm run build` from the IT Framework repository.");
+  });
+  return compilerModulePromise;
+}
+
+async function loadPackageManager() {
+  packageManagerModulePromise ??= import("../packages/package-manager/dist/index.js").catch(() => {
+    throw new Error("Package manager is not built. Run `npm install` then `npm run build` from the IT Framework repository.");
+  });
+  return packageManagerModulePromise;
+}
+
+async function loadRuntime() {
+  runtimeModulePromise ??= import("../packages/runtime/dist/index.js").catch(() => {
+    throw new Error("Runtime package is not built. Run `npm install` then `npm run build` from the IT Framework repository.");
+  });
+  return runtimeModulePromise;
+}
 
 async function main() {
   const args = process.argv.slice(2);
@@ -23,7 +42,7 @@ async function main() {
   }
 
   if (command === "create" && subcommand === "app") {
-    const appName = rest[0];
+    const appName = rest[1];
     if (!appName) {
       throw new Error("Usage: it create app <name>");
     }
@@ -80,10 +99,10 @@ Commands:
 
 async function createApp(name) {
   const target = resolve(process.cwd(), name);
-  const template = resolve(process.cwd(), "templates", "app");
+  const template = fileURLToPath(templateDirectory);
 
   if (!existsSync(template)) {
-    throw new Error("Template directory not found. Run the command from the repository root.");
+    throw new Error("Template directory not found. Rebuild or reinstall IT Framework.");
   }
 
   if (existsSync(target)) {
@@ -96,6 +115,8 @@ async function createApp(name) {
 }
 
 async function dev(entryFile = "examples/basic-app/app/pages/Home.it") {
+  const { compileItFile } = await loadCompiler();
+  const { createApplication, registerModule, renderApplicationSummary } = await loadRuntime();
   const result = await compileItFile(resolve(process.cwd(), entryFile));
   if (!result.success) {
     console.error("Compilation failed:");
@@ -116,6 +137,7 @@ async function dev(entryFile = "examples/basic-app/app/pages/Home.it") {
 }
 
 async function build(entryFile = "examples/basic-app/app/pages/Home.it", outDir = ".it-build") {
+  const { compileItFile } = await loadCompiler();
   const result = await compileItFile(resolve(process.cwd(), entryFile));
   if (!result.success) {
     console.error("Build failed:");
@@ -137,6 +159,7 @@ async function installDependency(name, version = "latest") {
   if (!name) {
     throw new Error("Usage: it install <package> [version]");
   }
+  const { addDependency, syncVendorDirectory } = await loadPackageManager();
   const manifestPath = resolve(process.cwd(), "package.it");
   const manifest = await addDependency(manifestPath, { name, version });
   await syncVendorDirectory(process.cwd(), manifest);
@@ -147,6 +170,7 @@ async function removeDependencyCommand(name) {
   if (!name) {
     throw new Error("Usage: it remove <package>");
   }
+  const { removeDependency, syncVendorDirectory } = await loadPackageManager();
   const manifestPath = resolve(process.cwd(), "package.it");
   const manifest = await removeDependency(manifestPath, name);
   await syncVendorDirectory(process.cwd(), manifest);
@@ -174,6 +198,7 @@ async function doctor() {
   }
 
   if (existsSync(manifestPath)) {
+    const { readPackageIt } = await loadPackageManager();
     const manifest = await readPackageIt(manifestPath);
     console.log(`Dependencies: ${manifest.dependencies.length}`);
   }
