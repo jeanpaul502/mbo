@@ -1,7 +1,8 @@
 #!/usr/bin/env node
+import { createServer } from "node:http";
 import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { compileItFile } from "@itfw/compiler";
 import {
@@ -10,8 +11,8 @@ import {
   removeDependency,
   syncVendorDirectory
 } from "@itfw/package-manager";
-import { createApplication, registerModule, renderApplicationSummary } from "@itfw/runtime";
 
+const frameworkRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const templateDirectory = new URL("../../../templates/app/", import.meta.url);
 
 async function main(): Promise<void> {
@@ -74,7 +75,7 @@ Commands:
   it build [entry-file] [out-dir]
   it test
   it deploy
-  it install <package> [version]
+  it install [package] [version]
   it remove <package>
   it update <package> [version]
   it doctor
@@ -88,23 +89,97 @@ function parseItConfig(content: string): Record<string, string> {
     if (!line || line.startsWith("#")) {
       continue;
     }
-    const match = line.match(/^([A-Za-z0-9_-]+)\s*=\s*"([^"]*)"$/);
-    if (match?.[1] && match[2] !== undefined) {
-      config[match[1]] = match[2];
+    const match = line.match(/^([A-Za-z0-9_-]+)\s*=\s*(?:"([^"]*)"|([^\s#]+))$/);
+    if (match?.[1]) {
+      config[match[1]] = match[2] ?? match[3] ?? "";
     }
   }
   return config;
 }
 
-async function resolveProjectEntry(projectRoot: string): Promise<string> {
+async function resolveProjectConfig(projectRoot: string): Promise<{ appName: string; entry: string; port: number }> {
   const configPath = resolve(projectRoot, "it.config");
   if (existsSync(configPath)) {
     const config = parseItConfig(await readFile(configPath, "utf8"));
-    if (config.entry) {
-      return config.entry;
-    }
+    const port = Number(config.port ?? "3000");
+    return {
+      appName: config.appName ?? "it-app",
+      entry: config.entry ?? "app/pages/Home.it",
+      port: Number.isFinite(port) ? port : 3000
+    };
   }
-  return "examples/basic-app/app/pages/Home.it";
+  return {
+    appName: "it-app",
+    entry: "examples/basic-app/app/pages/Home.it",
+    port: 3000
+  };
+}
+
+async function compileProjectEntry(projectRoot: string, entryFile?: string) {
+  const resolvedEntryFile = entryFile ?? (await resolveProjectConfig(projectRoot)).entry;
+  const result = await compileItFile(resolve(projectRoot, resolvedEntryFile));
+  return { entryFile: resolvedEntryFile, result };
+}
+
+function formatDiagnosticsHtml(
+  diagnostics: Array<{ severity: string; message: string; location: { line: number; column: number } }>
+): string {
+  if (!diagnostics.length) {
+    return "<p>No diagnostics.</p>";
+  }
+
+  return [
+    "<ul>",
+    ...diagnostics.map(
+      (diagnostic) =>
+        `<li>[${diagnostic.severity}] ${diagnostic.message} at ${diagnostic.location.line}:${diagnostic.location.column}</li>`
+    ),
+    "</ul>"
+  ].join("\n");
+}
+
+function createIndexHtml(params: {
+  appName: string;
+  entryFile: string;
+  code: string;
+  diagnostics: Array<{ severity: string; message: string; location: { line: number; column: number } }>;
+}): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${params.appName} - IT Framework Dev</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 0; padding: 32px; background: #0b1020; color: #e5e7eb; }
+      .card { max-width: 960px; margin: 0 auto; background: #11182c; border: 1px solid #26304a; border-radius: 16px; padding: 24px; }
+      h1, h2 { margin-top: 0; }
+      code, pre { font-family: Consolas, monospace; }
+      pre { padding: 16px; overflow: auto; background: #0f172a; border-radius: 12px; border: 1px solid #334155; }
+      .ok { color: #22c55e; }
+      .error { color: #f87171; }
+      a { color: #60a5fa; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>IT Framework Dev Server</h1>
+      <p>Application: <strong>${params.appName}</strong></p>
+      <p>Entry file: <code>${params.entryFile}</code></p>
+      <p>Status: <span class="${params.diagnostics.length ? "error" : "ok"}">${params.diagnostics.length ? "Diagnostics detected" : "Compiled successfully"}</span></p>
+      <p><a href="/module.js">Open generated module</a></p>
+      <h2>Diagnostics</h2>
+      ${formatDiagnosticsHtml(params.diagnostics)}
+      <h2>Generated Module</h2>
+      <pre>${params.code.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</pre>
+    </div>
+  </body>
+</html>`;
+}
+
+async function ensureProjectSupportDirectories(projectRoot: string): Promise<void> {
+  mkdirSync(resolve(projectRoot, "vendor"), { recursive: true });
+  mkdirSync(resolve(projectRoot, "plugins"), { recursive: true });
 }
 
 async function createApp(name: string): Promise<void> {
@@ -130,27 +205,55 @@ async function createApp(name: string): Promise<void> {
 }
 
 async function dev(entryFile?: string): Promise<void> {
-  const resolvedEntryFile = entryFile ?? (await resolveProjectEntry(process.cwd()));
-  const result = await compileItFile(resolve(process.cwd(), resolvedEntryFile));
-  if (!result.success) {
-    console.error("Compilation failed:");
-    for (const diagnostic of result.diagnostics) {
-      console.error(`- [${diagnostic.severity}] ${diagnostic.message} at ${diagnostic.location.line}:${diagnostic.location.column}`);
-    }
-    process.exitCode = 1;
-    return;
-  }
+  const projectRoot = process.cwd();
+  const config = await resolveProjectConfig(projectRoot);
+  const resolvedEntryFile = entryFile ?? config.entry;
 
-  const app = createApplication("it-dev-session");
-  registerModule(app, { kind: "it-module", declarations: JSON.parse(result.code.match(/\[(.|\s)*\]/)?.[0] ?? "[]") });
-  console.log(renderApplicationSummary(app));
-  console.log("\nGenerated code:\n");
-  console.log(result.code);
+  const server = createServer(async (request, response) => {
+    const { result } = await compileProjectEntry(projectRoot, resolvedEntryFile);
+
+    if (request.url === "/module.js") {
+      if (!result.success) {
+        response.writeHead(500, { "content-type": "application/javascript; charset=utf-8" });
+        response.end(`throw new Error(${JSON.stringify(result.diagnostics.map((item) => item.message).join(" | "))});`);
+        return;
+      }
+      response.writeHead(200, { "content-type": "application/javascript; charset=utf-8" });
+      response.end(result.code);
+      return;
+    }
+
+    if (request.url === "/__it/health") {
+      response.writeHead(result.success ? 200 : 500, { "content-type": "application/json; charset=utf-8" });
+      response.end(JSON.stringify({ ok: result.success, diagnostics: result.diagnostics, entry: resolvedEntryFile }, null, 2));
+      return;
+    }
+
+    response.writeHead(result.success ? 200 : 500, { "content-type": "text/html; charset=utf-8" });
+    response.end(
+      createIndexHtml({
+        appName: config.appName,
+        entryFile: resolvedEntryFile,
+        code: result.code,
+        diagnostics: result.diagnostics
+      })
+    );
+  });
+
+  server.listen(config.port, () => {
+    console.log(`IT Framework dev server running at http://localhost:${config.port}/`);
+    console.log(`Application: ${config.appName}`);
+    console.log(`Entry: ${resolvedEntryFile}`);
+  });
+
+  process.on("SIGINT", () => {
+    server.close(() => process.exit(0));
+  });
 }
 
 async function build(entryFile?: string, outDir = ".it-build"): Promise<void> {
-  const resolvedEntryFile = entryFile ?? (await resolveProjectEntry(process.cwd()));
-  const result = await compileItFile(resolve(process.cwd(), resolvedEntryFile));
+  const projectRoot = process.cwd();
+  const { entryFile: resolvedEntryFile, result } = await compileProjectEntry(projectRoot, entryFile);
   if (!result.success) {
     console.error("Build failed:");
     for (const diagnostic of result.diagnostics) {
@@ -160,30 +263,40 @@ async function build(entryFile?: string, outDir = ".it-build"): Promise<void> {
     return;
   }
 
-  const outputDirectory = resolve(process.cwd(), outDir);
+  const outputDirectory = resolve(projectRoot, outDir);
   mkdirSync(outputDirectory, { recursive: true });
   const outputPath = join(outputDirectory, "module.js");
   writeFileSync(outputPath, result.code, "utf8");
   console.log(`Build completed: ${outputPath}`);
+  console.log(`Source entry: ${resolvedEntryFile}`);
 }
 
 async function installDependency(name?: string, version?: string): Promise<void> {
-  if (!name) {
-    throw new Error("Usage: it install <package> [version]");
+  const projectRoot = process.cwd();
+  const manifestPath = resolve(projectRoot, "package.it");
+  const manifest = name
+    ? await addDependency(manifestPath, { name, version: version ?? "latest" })
+    : await readPackageIt(manifestPath);
+
+  await ensureProjectSupportDirectories(projectRoot);
+  await syncVendorDirectory(projectRoot, manifest, { registryRoot: frameworkRoot });
+
+  if (name) {
+    console.log(`Installed ${name}@${version ?? "latest"}`);
+  } else {
+    console.log(`Synchronized ${manifest.dependencies.length} dependencies from package.it`);
   }
-  const manifestPath = resolve(process.cwd(), "package.it");
-  const manifest = await addDependency(manifestPath, { name, version: version ?? "latest" });
-  await syncVendorDirectory(process.cwd(), manifest);
-  console.log(`Installed ${name}@${version ?? "latest"}`);
 }
 
 async function removeDependencyCommand(name?: string): Promise<void> {
   if (!name) {
     throw new Error("Usage: it remove <package>");
   }
-  const manifestPath = resolve(process.cwd(), "package.it");
+  const projectRoot = process.cwd();
+  const manifestPath = resolve(projectRoot, "package.it");
   const manifest = await removeDependency(manifestPath, name);
-  await syncVendorDirectory(process.cwd(), manifest);
+  await ensureProjectSupportDirectories(projectRoot);
+  await syncVendorDirectory(projectRoot, manifest, { registryRoot: frameworkRoot });
   console.log(`Removed ${name}`);
 }
 
@@ -199,12 +312,14 @@ async function doctor(): Promise<void> {
   const manifestPath = resolve(projectRoot, "package.it");
   const configPath = resolve(projectRoot, "it.config");
   const appPagesPath = resolve(projectRoot, "app", "pages");
+  const vendorPath = resolve(projectRoot, "vendor");
+  const pluginsPath = resolve(projectRoot, "plugins");
   const checks = [
     ["package.it", existsSync(manifestPath)],
     ["it.config", existsSync(configPath)],
     ["app/pages/", existsSync(appPagesPath)],
-    ["vendor/", existsSync(resolve(projectRoot, "vendor"))],
-    ["plugins/", existsSync(resolve(projectRoot, "plugins"))]
+    ["vendor/", existsSync(vendorPath)],
+    ["plugins/", existsSync(pluginsPath)]
   ];
 
   for (const [label, ok] of checks) {
@@ -214,6 +329,12 @@ async function doctor(): Promise<void> {
   if (existsSync(manifestPath)) {
     const manifest = await readPackageIt(manifestPath);
     console.log(`Dependencies: ${manifest.dependencies.length}`);
+  }
+
+  const vendorManifestPath = resolve(projectRoot, "vendor", "installed.json");
+  if (existsSync(vendorManifestPath)) {
+    const installed = JSON.parse(await readFile(vendorManifestPath, "utf8")) as { installed?: unknown[] };
+    console.log(`Vendor installed entries: ${installed.installed?.length ?? 0}`);
   }
 }
 

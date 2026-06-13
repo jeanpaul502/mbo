@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 export interface PackageDependency {
@@ -10,6 +10,18 @@ export interface PackageItManifest {
   name: string;
   version: string;
   dependencies: PackageDependency[];
+}
+
+export interface VendorPackageRecord {
+  name: string;
+  version: string;
+  installedAt: string;
+  source: "local-workspace" | "manifest-only";
+  sourcePath?: string;
+}
+
+export interface SyncVendorOptions {
+  registryRoot?: string;
 }
 
 function normalizeLines(content: string): string[] {
@@ -99,8 +111,90 @@ export async function removeDependency(filePath: string, name: string): Promise<
   return manifest;
 }
 
-export async function syncVendorDirectory(projectRoot: string, manifest: PackageItManifest): Promise<void> {
+function toVendorSegments(packageName: string): string[] {
+  return packageName.split("/").filter(Boolean);
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readLocalWorkspaceMetadata(
+  dependency: PackageDependency,
+  registryRoot?: string
+): Promise<{ source: VendorPackageRecord["source"]; sourcePath?: string }> {
+  if (!registryRoot || !dependency.name.startsWith("@itfw/")) {
+    return { source: "manifest-only" };
+  }
+
+  const packageName = dependency.name.slice("@itfw/".length);
+  const packagePath = join(registryRoot, "packages", packageName);
+  if (await pathExists(packagePath)) {
+    return {
+      source: "local-workspace",
+      sourcePath: packagePath
+    };
+  }
+
+  return { source: "manifest-only" };
+}
+
+export async function syncVendorDirectory(
+  projectRoot: string,
+  manifest: PackageItManifest,
+  options: SyncVendorOptions = {}
+): Promise<void> {
   const vendorPath = join(projectRoot, "vendor", "installed.json");
   await mkdir(dirname(vendorPath), { recursive: true });
-  await writeFile(vendorPath, JSON.stringify({ installed: manifest.dependencies }, null, 2), "utf8");
+
+  const installed: VendorPackageRecord[] = [];
+  for (const dependency of manifest.dependencies) {
+    const metadata = await readLocalWorkspaceMetadata(dependency, options.registryRoot);
+    const vendorPackagePath = join(projectRoot, "vendor", ...toVendorSegments(dependency.name));
+    await mkdir(vendorPackagePath, { recursive: true });
+
+    const record: VendorPackageRecord = {
+      name: dependency.name,
+      version: dependency.version,
+      installedAt: new Date().toISOString(),
+      source: metadata.source,
+      sourcePath: metadata.sourcePath
+    };
+    installed.push(record);
+
+    await writeFile(
+      join(vendorPackagePath, "package.json"),
+      JSON.stringify(
+        {
+          name: dependency.name,
+          version: dependency.version,
+          installedAt: record.installedAt,
+          source: metadata.source,
+          sourcePath: metadata.sourcePath ?? null
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+  }
+
+  await writeFile(
+    vendorPath,
+    JSON.stringify(
+      {
+        project: manifest.name,
+        version: manifest.version,
+        installed
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
 }

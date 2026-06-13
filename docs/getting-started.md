@@ -66,15 +66,18 @@ The generated application includes:
 
 At this stage of the project:
 
-- `node scripts/it.mjs dev <file.it>` compiles a `.it` file and prints the generated module
-- `node scripts/it.mjs build <file.it> <out-dir>` writes the generated JavaScript output
-- `node scripts/it.mjs doctor` checks a project's basic structure
+- `node scripts/it.mjs install` synchronizes the dependencies declared in `package.it` into `vendor/`
+- `node scripts/it.mjs dev` starts a local development server using the entry from `it.config`
+- `node scripts/it.mjs build` writes the generated JavaScript output into `.it-build/`
+- `node scripts/it.mjs doctor` checks a project's basic structure and installed vendor state
 
 Example:
 
 ```bash
-node scripts/it.mjs dev examples/basic-app/app/pages/Home.it
-node scripts/it.mjs build examples/basic-app/app/pages/Home.it .it-build
+cd my-app
+node ../mbo/scripts/it.mjs install
+node ../mbo/scripts/it.mjs dev
+node ../mbo/scripts/it.mjs build
 ```
 
 ## 6. Manage Dependencies
@@ -84,12 +87,13 @@ The framework uses `package.it` as its application manifest.
 Examples:
 
 ```bash
+node ../mbo/scripts/it.mjs install
 node scripts/it.mjs install @itfw/runtime 0.1.0
 node scripts/it.mjs update @itfw/runtime 0.1.0
 node scripts/it.mjs remove @itfw/runtime
 ```
 
-Installed dependency metadata is currently synchronized into `vendor/installed.json`.
+Installed dependency metadata is synchronized into `vendor/installed.json`, and each installed package gets a metadata file under `vendor/<package>/package.json`.
 
 ## Current Limitation
 
