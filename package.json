@@ -13,8 +13,10 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "dev": "node scripts/it.mjs dev",
+    "typecheck": "tsc -b",
     "test": "npm run test --workspaces --if-present",
-    "doctor": "node scripts/it.mjs doctor"
+    "doctor": "node scripts/it.mjs doctor",
+    "smoke": "node scripts/it.mjs build examples/basic-app/app/pages/Home.it .it-build"
   },
   "engines": {
     "node": ">=20.0.0"
